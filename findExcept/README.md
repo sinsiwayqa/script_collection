@@ -1,6 +1,3 @@
-# script_collection
-QA's script files
-
 ## findExcept
 ### 개요
 ${SOHA_SVC}/${SOHA_SVC}/log 디렉터리의 서버 로그 파일들의 exception 을 출력 한다.
