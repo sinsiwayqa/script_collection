@@ -20,6 +20,7 @@ ${SOHA_SVC}/${SOHA_SVC}/log 디렉터리의 서버 로그 파일들의 exception
 - findExcept shell script file
 - findExcept.awk awk file
 - .exception text file
+- common.sh shell script file
 
 
 
