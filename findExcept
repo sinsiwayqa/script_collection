@@ -1,0 +1,77 @@
+#!/bin/bash
+
+ver="1.0"
+cr_date="2020/02/01 00:00"
+mod_date="2020/04/24 10:00"
+author="leehs"
+dir=${HOME}/util
+findExceptAwk=${dir}/findExcept.awk
+exceptFile=${dir}/.exception
+#logDir=${1:-$SOHA_HOME/$SOHA_SVC/log}
+target=${1:-${SOHA_HOME}/${SOHA_SVC}/log}
+
+init() {
+
+	# Common function reference
+        # ex) delimiter, printLog, ...
+	if [ -f ${dir}/common.sh ]; then
+		. ${dir}/common.sh
+	fi
+
+	return 0
+}
+
+usage(){
+        echo "Usage: findExcept <file|directory> 
+
+        -v, --version Print version
+
+Examples:
+findExcept                      #Output log file of \$SOHA_HOME/\$SOHA_SVC/log directory
+findExcept issue/kakao/GW01_log #Output log file of issue/kakao/GW01_log directory
+findExcept inline_server.log    #Print the inline_server.log file
+findExcept -v                   #Print Program version"
+}
+
+printExcept() {
+
+	logFile=$1
+	#log=`basename ${logFile}`
+	delimiter
+	printLog "${logFile}" "start"
+	command awk -v exceptFile=${exceptFile} -f ${findExceptAwk} ${logFile}
+	printLog "${logFile}" "end"
+	delimiter
+	echo ""
+}
+
+main() {
+	fName="main"
+
+	init
+
+        if [[ ${target} == "-v" ]] || [[ ${target} == "--version" ]]; then
+		printf "%-20s : %-20s \n" "findExcept version" "${ver}"
+		printf "%-20s : %-20s \n" "create date" "${cr_date}"
+		printf "%-20s : %-20s \n" "last modify date" "${mod_date}"
+		printf "%-20s : %-20s \n" "auther" "${author}"
+                exit 0
+        fi
+
+	if [ -f ${target} ]; then
+		cd `dirname ${target}`
+		printExcept `basename ${target}`
+	
+	elif [ -d ${target} ]; then
+		cd ${target}
+		for vlogFile in `find . -maxdepth 1 -type f -name '*.log'`
+		do
+			printExcept `basename ${vlogFile}`
+		done
+	else
+		printLog "${fName}" "invaild value[${target}]"
+		usage
+	fi
+}
+
+main
