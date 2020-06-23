@@ -1,0 +1,128 @@
+#!/bin/bash
+
+ver="1.1"
+cr_date="2020/04/08 22:03"
+dir=${HOME}/util
+findSigAwk=${dir}/findSig.awk
+infoFile=${dir}/.sigInfo
+args=$#
+traceDir=$1
+maxLine=20
+detail=0
+info=0
+
+init(){
+	# Common function reference
+	# ex) delimiter, printLog, ...
+	if [ -f ${dir}/common.sh ]; then
+		. ${dir}/common.sh
+	fi
+
+	return 0
+}
+
+usage(){
+	echo "Usage: findSig <directory> [option] 
+	-I, --info    Print information for trace file 
+	-D, --detail  Print detailed trace file
+	-L, --maxline stack max output rows
+
+	-v, --version Print version
+
+Examples:
+findSig ./trace -D     #Detailed output of the contents of the ./trace directory
+findSig ./trace -I     #Output with trace file information in the ./trace directory
+findSig ./trace -L 10  #Maximum number of stacks output in the ./trace directory
+findSig -v             #Print Program version"
+}
+
+setOpt(){
+	fName=setOption
+
+	shift
+	while [ -n "$1" ]
+	do
+		case "$1" in
+		-D|--detail)
+			detail=1
+			;;
+		-I|--info)
+			info=1
+			;;
+		-L|--maxline)
+			if [[ -z "$2" ]] || [[  "$2" -le 0 ]]; then
+				maxLine=${maxLine}
+			else
+				maxLine=$2
+			fi
+			shift
+			;;
+		*)
+			printLog "${fName}" "invalid option [$1]"
+			usage
+			exit 127
+			;;
+		esac
+		shift
+	done
+
+	return 0
+}
+
+veridation(){
+	fName=veridation
+
+	# Check argument value
+	if [ ${args} -eq 0 ]; then
+		usage
+		exit 127
+	fi
+
+	if [[ ${traceDir} == "-v" ]] || [[ ${traceDir} == "--version" ]]; then
+		echo "findSig version : ${ver}"
+		echo "last modify date : ${cr_date}"
+		exit 0
+	fi
+
+	# Check trace directory
+	if [ -z ${traceDir} ]; then
+		printLog "${fName}" "no argument value was entered"
+		exit 127
+	fi
+
+	# Check trace directory
+	if [ ! -d ${traceDir} ]; then
+		printLog "${fName}" "${traceDir} directory does not exist or is not a directory"
+		exit 127
+	fi
+
+	return 0
+}
+
+main(){
+
+	init
+
+	veridation
+
+	setOpt $@
+
+	# Repeat as many trace files
+	for trcFile in `command find ${traceDir} -name '*.trc' -type f -size +0`
+	do
+		# print delimiter
+		delimiter
+		# Get file name
+		trc=`command basename ${trcFile}`
+		# print start and file name
+		printLog "${trcFile}" "start"
+		# Get stack dump
+		command awk -v infoFile=${infoFile} -v maxLine=${maxLine} -v detail=${detail} -v info=${info} -f ${findSigAwk} ${trcFile}
+		# print stop and file name
+		printLog "${trc}" "end"
+		# print delimiter
+		delimiter
+	done
+}
+
+main $@
