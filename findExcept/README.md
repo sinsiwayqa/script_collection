@@ -7,7 +7,7 @@
 ```bash
 >$ ./findExcept <file|directory>
 ```
-## 예시
+#### 예시
 - ${SOHA_HOME}/${SOHA_SVC}/log 디렉터리의 *.log 파일의 exception 을 출력 한다.
 ```bash
 >$ ./findExcept 
