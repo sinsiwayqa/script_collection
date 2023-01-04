@@ -1,0 +1,597 @@
+#!/bin/sh
+
+ver="0.4"
+dir=${HOME}
+config_info=${dir}/config.info
+branches="RELEASE"
+#inst_prefix="installer-RELEASE"
+#master_port=7701
+#master_db_name=M_r2067
+#master_host=192.168.10.101
+#petra_version="4.1.0.2.0"
+#revision="r2067"
+err=${dir}/err.log
+inst_log="${dir}/auto_install.log"
+kakao_flag=1
+del_flag=1
+keysvr_flag=0
+
+SUCCESS=0
+NO_EXIST_INST=101
+ALREADY_USE_PORT=401
+
+if [ -f ${err} ]; then
+	rm ${err}
+fi
+
+if [ -f ${inst_log} ]; then
+	rm ${inst_log}
+fi
+
+usage() {
+	echo "Usage: petra_inst [option] 
+	-svc, --sohasvc      Enter SOHA SVC
+	-dp, --dgnetport     Enter DgNet Port
+	-jp, --jdbcport      Enter MySQL/JDBC Port
+	-kp, --kredport      Enter Kred Port
+	-hp, --helperport    Enter Helper Port
+	-P,  --prodid        Enter Product id
+	-pb, --permblks      Enter permanent block size
+	-tb, --tempblks      Enter temporary block size
+	-mn, --mastername    Enter Master db name
+	-mh, --masterhost    Enter Master host
+	-mp, --masterport    Enter Master DgNet Port
+	-pv, --petraversion  Enter Target petra version
+	-r,  --revision      Enter Targer petra revision
+	-h,  --host          Enter Targer hostname or ip address
+	--kakao|--no_kakao   Enter Kakao flag(default : --kakao)
+	--del_inst|--no_del_inst Enter Installer delete flag(default : --del_inst)
+	--keysvr|--no_keysvr Enter keysvr flag(default : --no_keysvr)
+
+        -v, --version Print version
+
+Examples:
+petra_inst -pv 4.1.0.3.0  #Install petra version 4.1.0.3.0
+petra_inst -v             #Print Program version"
+
+}
+
+cpu_check() {
+	UNAME_PROCESSER=`(uname -p) 2>/dev/null` || UNAME_PROCESSER=unknown
+	UNAME_MACHINE=`(uname -m) 2>/dev/null` || UNAME_MACHINE=unknown
+	UNAME_SYSTEM=`(uname -s) 2>/dev/null`  || UNAME_SYSTEM=unknown
+
+	case "${UNAME_PROCESSER}:${UNAME_MACHINE}:${UNAME_SYSTEM}" in
+	*:*:Linux)
+		host_cpu=${UNAME_PROCESSER}
+		;;
+	powerpc:*:AIX)
+		host_cpu=${UNAME_PROCESSER}
+		;;
+	*:*:SunOS)
+		host_cpu=${UNAME_PROCESSER}
+		;;
+	*:ia64:HP-UX)
+		host_cpu=${UNAME_MACHINE}
+		;;
+	*:9000/[34678]??:HP-UX)
+		host_cpu="hppa2.0w"
+		;;
+	*)
+		host_cpu="unknown"
+		;;
+	esac
+
+}
+
+
+print_log() {
+	opt=$1;
+	shift
+	echo "$opt" "$*"
+	echo "[`date "+%y/%m/%d %H:%M:%S"`] $opt" "$*" >> "$inst_log"
+	
+	return 0
+}
+
+init_config() {
+
+	while [ -n "$1" ]
+	do
+		case "$1" in
+		-svc|--sohasvc)
+			product_name=$2
+			shift
+			;;
+		-dp|--dgnetport)
+			DGnet_port=$2
+			shift
+			;;
+		-jp|--jdbcport)
+			mysql_port=$2
+			shift
+			;;
+		-kp|--kredport)
+			kred_port=$2
+			shift
+			;;
+		-hp|--helperport)
+			helper_port=$2
+			shift
+			;;
+		-P|--prodid)
+			product_id=$2
+			echo ${product_id}
+			if [ ${product_id} -eq 0 ]; then
+				prod_prefix="M"
+			else
+				prod_prefix="P"
+			fi
+			shift
+			;;
+		-pb|--permblks)
+			perm_blks=$2
+			shift
+			;;
+		-tb|--tempblks)
+			temp_blks=$2
+			shift
+			;;
+		-mn|--mastername)
+			master_db_name=$2
+			shift
+			;;
+		-mh|--masterhost)
+			master_host=$2
+			shift
+			;;
+		-mp|--masterport)
+			master_port=$2
+			shift
+			;;
+		-pv|--petraversion)
+			petra_version=$2
+			if [ ${petra_version} = "4.1.0.0.1" ]; then
+				revision="r34"
+			elif [ ${petra_version} = "4.1.0.1.0" ]; then
+				revision="r78"
+			elif [ ${petra_version} = "4.1.0.1.1" ]; then
+				revision="r108"
+			elif [ ${petra_version} = "4.1.0.1.2" ]; then
+				revision="r262"
+			elif [ ${petra_version} = "4.1.0.1.3" ]; then
+				revision="r786"
+			elif [ ${petra_version} = "4.1.0.1.4" ]; then
+				revision="r1564"
+			elif [ ${petra_version} = "4.1.0.2.0" ]; then
+				revision="r2067"
+			else
+				revision=""
+			fi
+			shift
+			;;
+		-r|--revision)
+			revision=$2
+			shift
+			;;
+		-h|--host)
+			if [ -z "${2}" ] || [ ${2} = "-svc" ] || [ ${2} = "-dp" ] || [ ${2} = "-jp" ] || [ ${2} = "-kp" ] || [ ${2} = "-hp" ] || [ ${2} = "-P" ] || [ ${2} = "-pb" ] || [ ${2} = "-tb" ] || [ ${2} = "-mn" ] || [ ${2} = "-mh" ] || [ ${2} = "-mp" ] || [ ${2} = "-pv" ] || [ ${2} = "-r" ] || [ ${2} = "--sohasvc" ] || [ ${2} = "--dgnetport" ] || [ ${2} = "--jdbcport" ] || [ ${2} = "--kredport" ] || [ ${2} = "--helperport" ] || [ ${2} = "--prodid" ] || [ ${2} = "--permblks" ] || [ ${2} = "--tempblks" ] || [ ${2} = "--mastername" ] || [ ${2} = "--masterhost" ] || [ ${2} = "--masterport" ] || [ ${2} = "--petraversion" ] || [ ${2} = "--revision" ] || [ ${2} = "--kakao" ] || [ ${2} = "--no_kakao" ] || [ ${2} = "--del_inst" ] || [ ${2} = "--no_del_inst" ]; then
+				hostname=`hostname`
+			else
+				hostname=$2
+				shift
+			fi
+			;;
+		--kakao)
+			kakao_flag=1
+			;;
+		--no_kakao)
+			kakao_flag=0
+			;;
+		--del_inst)
+			del_flag=1
+			;;
+		--no_del_inst)
+			del_flag=0
+			;;
+		*)
+			print_log "invalid option [$1]"
+			return 127	
+			;;
+		esac
+		shift
+	done
+
+	if [ -z "${petra_version}" ]; then
+		print_log "petra version has not been entered"
+		return 127	
+	fi
+
+	if [ `echo "${petra_version}" | sed 's/\.//g'` -gt 41020 ]; then
+		revision=""
+	fi
+
+	if [ -n "${revision}" ]; then
+		target_version="${petra_version}-${revision}"
+	else
+		target_version="${petra_version}"
+	fi
+
+	inst_prefix="installer-${branches}-${target_version}"
+
+	return 0
+}
+
+getIp() {
+
+	if [ ${system_name} = "Linux" ]; then
+		hostname -I | awk '{print $1}'
+	else
+		netstat -in | awk '/192\.?(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.?(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.?(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)/{print $4}'
+	fi
+
+	return 0
+}
+
+getUser() {
+
+	os_user="";
+	if [ ${system_name} = "Linux" ]; then
+		os_user=${USER}
+	else
+		os_user=${LOGNAME}
+	fi
+
+	if [ -z "${os_user}" ]; then
+		os_user="petra"
+	fi
+
+	echo ${os_user}
+
+	return 0
+}
+
+getIsMaster() {
+
+	if [ ${product_id} -gt 0 ]; then
+		echo "no"
+	else
+		echo "yes"
+	fi
+
+	return 0
+}
+
+get_version() {
+
+	inst_file=`ls -1 ${dir}/${inst_prefix}*`
+
+	if [ `echo ${inst_file} | wc -w` -eq 0 ]; then
+		print_log "no installer file."
+		rm ${config_info}
+		exit 127;
+	fi
+
+	if [ `echo ${inst_file} | wc -w` -gt 1 ]; then
+		print_log "too many installer files."
+		rm ${config_info}
+		exit 127;
+	fi
+
+	tmp_inst1=`basename ${inst_file}`
+	token_cnt=`echo ${tmp_inst1} | awk 'BEGIN{FS="-"}{print NF}'`
+	if [ ${system_name} = "Linux" ]; then
+		if [ ${token_cnt} -gt 8 ]; then
+                	pVersion=`echo ${tmp_inst1} | awk 'BEGIN{FS="-"}{print $3}'`
+                	pSvnRev=`echo ${tmp_inst1} | awk 'BEGIN{FS="-"}{print $4}'`
+                	pHost=`echo ${tmp_inst1} | awk 'BEGIN{FS="-"}{print $5"-"$6"-"$7"-"$8"-"$9}'`
+                	inst_file=${inst_prefix}-${pHost}
+		else
+                	pVersion=`echo ${tmp_inst1} | awk 'BEGIN{FS="-"}{print $3}'`
+                	pHost=`echo ${tmp_inst1} | awk 'BEGIN{FS="-"}{print $4"-"$5"-"$6"-"$7"-"$8}'`
+                	inst_file=${inst_prefix}-${pHost}
+		fi
+	else
+		if [ ${token_cnt} -gt 7 ]; then
+                	pVersion=`echo ${tmp_inst1} | awk 'BEGIN{FS="-"}{print $3}'`
+                	pSvnRev=`echo ${tmp_inst1} | awk 'BEGIN{FS="-"}{print $4}'`
+                	pHost=`echo ${tmp_inst1} | awk 'BEGIN{FS="-"}{print $5"-"$6"-"$7"-"$8}'`
+                	inst_file=${inst_prefix}-${pHost}
+		else
+                	pVersion=`echo ${tmp_inst1} | awk 'BEGIN{FS="-"}{print $3}'`
+                	pHost=`echo ${tmp_inst1} | awk 'BEGIN{FS="-"}{print $4"-"$5"-"$6"-"$7}'`
+                	inst_file=${inst_prefix}-${pHost}
+		fi
+	
+	fi
+	ver=`echo ${pVersion} | sed 's/\.//g'`
+
+	return 0
+}
+
+check_port() {
+
+	for port in ${DGnet_port} ${mysql_port}	${kred_port} ${helper_port}
+	do
+		if [ `netstat -na | grep ${port} | grep "LISTEN" | wc -l` -gt 0 ]; then
+			print_log "${port} is listening"
+			return ${ALREADY_USE_PORT}
+		fi
+	done
+}
+
+get_installer() {
+
+	option="--remote-name"
+	api_token="cc0b862596ada203e7b61e94ba7bc749c67cff38"
+	#url="trac.sinsiway.com/attachments/download/1671/installer-RELEASE-4.1.0.4.4-x86_64-redhat-linux2.6.18-glibc2.5-b64"
+	url="trac.sinsiway.com/attachments/download/2170/installer-RELEASE-4.1.0.4.48-x86_64-redhat-linux2.6.18-glibc2.5-b64"
+
+	#target_installer=${inst_prefix}-${target_version}
+	repo_dir=`cat /etc/passwd | grep hudson | awk 'BEGIN{FS=":"}{print $6"/workspace/petra4_*_release"}'`
+
+#	if [ ! -f ${dir}/${inst_prefix}-* ]; then
+#		cp ${repo_dir}/${inst_prefix}-* ${dir} 2>${err}
+#		if [ $? -eq 1 ]; then
+#			scp qa@192.168.10.15:/home/qa/dist/QA_RELEASE/${inst_prefix}-${host_cpu}-*  ${dir} 2>${err}
+#			if [ $? -eq 1 ]; then
+#				return ${NO_EXIST_INST}
+#			fi
+#		fi
+#	fi
+
+	if [ ! -f ${dir}/${inst_prefix}-* ]; then
+		curl -k ${option} https://${api_token}@${url}
+		if [ $? -eq 1 ]; then
+			return ${NO_EXIST_INST}
+		fi
+	fi
+#		if [ $? -eq 1 ]; then
+#			scp qa@192.168.10.15:/home/qa/dist/QA_RELEASE/${inst_prefix}-${host_cpu}-*  ${dir} 2>${err}
+#			if [ $? -eq 1 ]; then
+#				return ${NO_EXIST_INST}
+#			fi
+#		fi
+#	fi
+
+	return ${SUCCESS}
+}
+
+get_config_info() {
+
+	system_name=`uname -s | sed 's/\-//g'`
+	get_version
+
+	if [ -z "${hostname}" ]; then
+		system_ip=`getIp`
+	else
+		system_ip=${hostname}
+	fi
+	#server_ip=${system_ip}
+	server_ip="0.0.0.0"
+
+	account_name=`getUser`
+	#account_name="dgadmin"
+	product_id=${product_id:-100}
+	product_name="${product_name:-${prod_prefix}_${system_name}_${ver}}"
+	soha_home=${dir}/sinsiway/${product_name}
+	soha_svc=${product_name}
+	DGnet_port=${DGnet_port:-6600}
+	mysql_port=${mysql_port:-6700}
+	kred_port=${kred_port:-6800}
+	helper_port=${helper_port:-6900}
+	perm_blks=${perm_blks:-10000}
+	temp_blks=${temp_blks:-20000}
+	auto_install="yes"
+	isMaster=`getIsMaster`
+	master_link_info_id=1
+	master_port=${master_port:-$DGnet_port}
+	master_link_name="MASTER_01"
+	master_db_name=${master_db_name:-$product_name}
+	master_host=${master_host:-$system_ip}
+	max_connect_pool=5
+	dump_connect_pool="YES"
+
+	return 0
+}
+
+set_config_info() {
+
+	if [ -f ${config_info} ]; then
+		rm ${config_info}
+	fi
+
+	echo "system_name=${system_name}" > ${config_info}
+	echo "system_ip=${system_ip}" >> ${config_info}
+	echo "account_name=${account_name}" >> ${config_info}
+	echo "product_id=${product_id}" >> ${config_info}
+	echo "product_name=${product_name}" >> ${config_info}
+	echo "soha_home=${soha_home}" >> ${config_info}
+	echo "soha_svc=${soha_svc}" >> ${config_info}
+	echo "server_ip=${server_ip}" >> ${config_info}
+	echo "DGnet_port=${DGnet_port}" >> ${config_info}
+	echo "mysql_port=${mysql_port}" >> ${config_info}
+	echo "kred_port=${kred_port}" >> ${config_info}
+	echo "helper_port=${helper_port}" >> ${config_info}
+	echo "perm_blks=${perm_blks}" >> ${config_info}
+	echo "temp_blks=${temp_blks}" >> ${config_info}
+	echo "auto_install=${auto_install}" >> ${config_info}
+	echo "isMaster=${isMaster}" >> ${config_info}
+	echo "master_link_info_id=${master_link_info_id}" >> ${config_info}
+	echo "master_port=${master_port}" >> ${config_info}
+	echo "master_link_name=${master_link_name}" >> ${config_info}
+	echo "master_db_name=${master_db_name}" >> ${config_info}
+	echo "master_host=${master_host}" >> ${config_info}
+	echo "max_connect_pool=${max_connect_pool}" >> ${config_info}
+	echo "dump_connect_pool=${dump_connect_pool}" >> ${config_info}
+
+	return 0
+}
+
+exec_installer() {
+	
+	sh ${dir}/${inst_file} 2>${err}
+
+	return $?
+}
+
+del_installer() {
+	
+    if [ ${del_flag} -eq 1 ]; then
+        rm ${dir}/${inst_file}
+    fi
+}
+
+set_rest() {
+
+	if [ ${product_id} -eq 0 ] && [ ${kakao_flag} -eq 1 ]; then
+		. ${soha_home}/${soha_svc}_env.sh
+
+		sqlpreter username=dgadmin << EOF
+insert into pt_user(ptu_id, security_level, work_type, active_flag, status, org_uid, name) values(nextval('PT_A_KEY_SEQ'), 3, 1, 1, 0, 'petra', 'petra');
+insert into pt_user_auth_user(auth_id, auth_user, org_uid) values(nextval('PT_A_KEY_SEQ'), 'petra', 'petra');
+select * from paup_petra_pw_proc(5,'','(user_info=(user_id=petra)(expiry_day=0)(allow_fail_count=0)(password=petra@one1)(init_lock=no))');
+create table kakao_listen_port(listen_port ub2);
+bind seq 10000 1 10000;
+insert into kakao_listen_port values(:1);
+exit;
+exit;
+EOF
+	fi
+
+	return 0;
+}
+
+set_keysvr() {
+        if [ ${product_id} -eq 0 ] && [ ${keysvr_flag} -eq 1 ]; then
+                . ${soha_home}/${soha_svc}_env.sh
+
+		master_key_password=petra@one1
+		key_open_mode=auto
+
+		sqlpreter username=dgadmin << EOF
+call pcp_create_key('${master_key_password}');
+call pcp_open_key('${master_key_password}');
+call pcp_set_key_open_mode('${master_key_password}','${key_open_mode}');
+exit;
+exit;
+EOF
+
+	fi
+
+	return 0;
+}
+
+main() {
+
+	cpu_check
+
+	init_config $@
+	return=$?
+	if [ ${return} -eq ${SUCCESS} ]; then
+		print_log "init config succeeded"
+		echo ${product_id}
+	elif [ ${return} -gt ${SUCCESS} ]; then
+		print_log "init config failed"
+		usage
+		exit 127
+	fi
+
+	print_log "get_installer started"
+	# 1. Get the installer file from the home directory. 
+	# 2. If no installer file exist in the home directory, 
+	#    get the installer file from the local repository. 
+	# 3. If no installer file exist in the local repository, 
+	#    hudson gets the installation file.
+	get_installer
+	return=$?
+	if [ ${return} -eq ${SUCCESS} ]; then
+		print_log "Get installer was successful"
+	elif [ ${return} -gt ${SUCCESS} ]; then
+		print_log "no installer file"
+		exit 127
+	fi
+
+	print_log "get config info started"
+	# Get variables like ip, osuser, soha_home, soha_svc, product_name
+	get_config_info
+	return=$?
+	if [ ${return} -eq ${SUCCESS} ]; then
+		print_log "get config info succeeded"
+	elif [ ${return} -gt ${SUCCESS} ]; then
+		print_log "get config info failed"
+		exit 127
+	fi
+
+	print_log "set config info started"
+	# Set variables like ip, osuser, soha_home, soha_svc, product_name
+	set_config_info
+	return=$?
+	if [ ${return} -eq ${SUCCESS} ]; then
+		print_log "set config info succeeded"
+	elif [ ${return} -gt ${SUCCESS} ]; then
+		print_log "set config info failed"
+		exit 127
+	fi
+	
+	print_log "check port started"
+	# Check the port that is listening
+	check_port
+	return=$?
+	if [ ${return} -eq ${SUCCESS} ]; then
+		print_log "check port succeeded"
+	elif [ ${return} -gt ${SUCCESS} ]; then
+		print_log "port is already in use"
+		exit 127
+	fi
+	
+	print_log "exec installation started"
+	# Run the installation
+	exec_installer
+	return=$?
+	if [ ${return} -eq ${SUCCESS} ]; then
+		print_log "The installation was successful"
+	elif [ ${return} -gt ${SUCCESS} ]; then
+		print_log "Installation failed"
+		exit 127
+	fi
+
+	# If del_flag is 1, the installer file is deleted.
+	print_log "delete installer started"
+	del_installer
+	return=$?
+	if [ ${return} -eq ${SUCCESS} ]; then
+		print_log "installer delete successful"
+	elif [ ${return} -gt ${SUCCESS} ]; then
+		print_log "installer deletion failed"
+		exit 127
+	fi
+
+	# If it is a master product and rest_flag is 1, the initial setting is executed.
+	print_log "restapi setting started"
+	set_rest	
+	return=$?
+	if [ ${return} -eq ${SUCCESS} ]; then
+		print_log "restapi setup successful"
+	elif [ ${return} -gt ${SUCCESS} ]; then
+		print_log "restapi setup failed"
+		exit 127
+	fi
+
+	# If it is a master product and keysvr_flag is 1, the initial setting is executed.
+	print_log "key server setting started"
+	set_keysvr
+	return=$?
+	if [ ${return} -eq ${SUCCESS} ]; then
+		print_log "key server setup successful"
+	elif [ ${return} -gt ${SUCCESS} ]; then
+		print_log "key server setup failed"
+		exit 127
+	fi
+
+	rm ${err} 2>/dev/null
+
+	return 0
+}
+
+main $@
